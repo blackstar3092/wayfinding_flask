@@ -16,6 +16,34 @@ def _safe_int(v, default):
     except Exception:
         return default
 
+def get_skill_recommendation(skills):
+    """
+    skills = {
+        'coding_ability': 4,
+        'collaboration': 2,
+        'problem_solving': 5,
+        'initiative': 3
+    }
+    """
+
+    if not skills:
+        return None
+
+    recommendations = {
+        "coding_ability": "Practice FRQs and backend feature building",
+        "collaboration": "Engage more in group discussions and pair programming",
+        "problem_solving": "Try more algorithm and FRQ-style problems",
+        "initiative": "Take ownership of a feature or lead a task"
+    }
+
+    # find weakest skill
+    weakest = min(skills, key=skills.get)
+
+    return {
+        "focus": weakest,
+        "score": skills[weakest],
+        "advice": recommendations.get(weakest, "Keep improving across all areas!")
+    }
 class SkillPassportAPI:
 
     class _GetPassport(Resource):
@@ -97,7 +125,45 @@ class SkillPassportAPI:
                 'current_skills': current_skills,
                 'history': [s.read() for s in snapshots]
             }, 200
+        
+    class _GetRecommendation(Resource):
+        @token_required()
+        def get(self):
+            """Get skill recommendation for current user"""
+
+            current_user = g.current_user
+            if not current_user:
+                return {'message': 'User not found'}, 404
+
+            snapshots = (
+                SkillSnapshot.query
+                .filter_by(user_id=current_user.id)
+                .order_by(SkillSnapshot.snapshot_date.asc())
+                .all()
+            )
+
+            if not snapshots:
+                return {'message': 'No skill data found'}, 404
+
+            latest = snapshots[-1].read()
+
+            # extract ONLY skill fields
+            skills = {
+                "coding_ability": latest["coding_ability"],
+                "collaboration": latest["collaboration"],
+                "problem_solving": latest["problem_solving"],
+                "initiative": latest["initiative"]
+            }
+
+            recommendation = get_skill_recommendation(skills)
+
+            return {
+                "user_id": current_user.id,
+                "latest_skills": skills,
+                "recommendation": recommendation
+            }, 200
 
     api.add_resource(_GetPassport, '/user/skill-passport')
     api.add_resource(_CreateSnapshot, '/user/skill-snapshot')
     api.add_resource(_AdminGetPassport, '/admin/skill-passport/<int:user_id>')
+    api.add_resource(_GetRecommendation, '/user/skill-recommendation')
